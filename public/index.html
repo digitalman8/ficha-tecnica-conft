@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#55372D">
+<title>Fichas técnicas · Confeitaria</title>
+<link rel="stylesheet" href="/estilos.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<a href="#conteudo" class="pular">Ir para o conteúdo</a>
+<div class="app" id="app">
+  <aside class="catalogo" aria-labelledby="titulo-catalogo">
+    <header class="marca"><img class="marca-icone" src="/fotos/marca.png" alt=""><span>Fichas técnicas</span></header>
+    <div class="busca">
+      <h1 id="titulo-catalogo">Minhas fichas</h1>
+      <div class="busca-linha">
+        <label class="sr" for="busca">Buscar produto</label>
+        <input id="busca" type="search" placeholder="Buscar produto…">
+        <button id="nova" class="caramelo" type="button">+ Nova ficha</button>
+      </div>
+      <div class="filtros">
+        <label class="sr" for="categoria">Filtrar por categoria</label>
+        <select id="categoria"><option value="">Todas as categorias</option></select>
+        <label class="sr" for="estado">Estado da ficha</label>
+        <select id="estado"><option value="ativas">Ativas</option><option value="arquivo">Arquivadas</option></select>
+      </div>
+    </div>
+    <div id="catalogo" class="lista-catalogo"><p>Carregando fichas…</p></div>
+  </aside>
+  <main id="conteudo" class="conteudo" tabindex="-1"></main>
+</div>
+<div id="notificacao" class="notificacao" role="status" hidden></div>
+</body>
+</html>
