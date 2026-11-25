@@ -28,9 +28,28 @@
       </div>
     </div>
     <div id="catalogo" class="lista-catalogo"><p>Carregando fichas…</p></div>
+    <details class="backup-menu">
+      <summary>Backup das fichas</summary>
+      <div class="acoes">
+        <button type="button" class="secundario" id="baixar-backup">Baixar backup</button>
+        <button type="button" class="secundario" id="escolher-backup">Restaurar backup</button>
+        <input type="file" id="arquivo-backup" accept=".json,application/json" hidden>
+      </div>
+    </details>
   </aside>
   <main id="conteudo" class="conteudo" tabindex="-1"></main>
 </div>
 <div id="notificacao" class="notificacao" role="status" hidden></div>
+<dialog id="dialogo-backup" aria-labelledby="titulo-backup" aria-describedby="resumo-backup aviso-backup">
+  <h2 id="titulo-backup">Restaurar backup</h2>
+  <p id="resumo-backup"></p>
+  <p id="aviso-backup" class="aviso">A restauração substitui todas as fichas atuais. Baixe um backup do catálogo atual antes de continuar se quiser guardá-lo.</p>
+  <div class="acoes">
+    <button type="button" class="secundario" id="cancelar-backup" autofocus>Cancelar</button>
+    <button type="button" class="secundario" id="salvar-backup-atual">Baixar backup atual</button>
+    <button type="button" class="primario" id="confirmar-backup">Confirmar restauração</button>
+  </div>
+  <p id="erro-backup" class="erro" role="alert" hidden></p>
+</dialog>
 </body>
 </html>

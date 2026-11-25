@@ -7,8 +7,93 @@ import { abrirBanco } from './banco.js';
 import { exemplos } from './exemplos.js';
 import { ajustar, numero, valido } from './public/rendimento.js';
 import { gerarPdf } from './pdf.js';
+import { montarTelaLigada } from './public/tela-ligada.js';
 
 const brownie = {...exemplos[0], versao:1};
+
+test('tela ligada libera ao ocultar a ficha e recupera ao voltar', async () => {
+  const ambiente = new EventTarget();
+  ambiente.document = Object.assign(new EventTarget(), {visibilityState:'visible'});
+  const bloqueios = [];
+  ambiente.navigator = {wakeLock:{async request(tipo) {
+    assert.equal(tipo,'screen');
+    const bloqueio = Object.assign(new EventTarget(), {released:false, async release() {
+      this.released = true;
+      this.dispatchEvent(new Event('release'));
+    }});
+    bloqueios.push(bloqueio);
+    return bloqueio;
+  }}};
+  const controle = Object.assign(new EventTarget(), {checked:false});
+  const status = {};
+  const desmontar = montarTelaLigada(controle,status,ambiente);
+  assert.equal(bloqueios.length,0);
+  controle.checked = true;
+  controle.dispatchEvent(new Event('change'));
+  await Promise.resolve();
+  assert.match(status.textContent,/Tela ligada/);
+  ambiente.document.visibilityState = 'hidden';
+  ambiente.document.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(bloqueios[0].released,true);
+  assert.equal(controle.checked,true);
+  ambiente.document.visibilityState = 'visible';
+  ambiente.document.dispatchEvent(new Event('visibilitychange'));
+  await Promise.resolve();
+  assert.equal(bloqueios.length,2);
+  desmontar();
+  assert.equal(bloqueios[1].released,true);
+  assert.equal(controle.checked,false);
+});
+
+test('tela ligada trata navegador incompatível e libera solicitação que termina após sair', async () => {
+  const controle = Object.assign(new EventTarget(), {checked:false});
+  const status = {};
+  montarTelaLigada(controle,status,{navigator:{}});
+  assert.equal(controle.disabled,true);
+  assert.match(status.textContent,/Indisponível/);
+  const ambiente = new EventTarget();
+  ambiente.document = Object.assign(new EventTarget(), {visibilityState:'visible'});
+  let resolver;
+  ambiente.navigator = {wakeLock:{request:() => new Promise(resolve => { resolver = resolve; })}};
+  const outroControle = Object.assign(new EventTarget(), {checked:true});
+  const desmontar = montarTelaLigada(outroControle,status,ambiente);
+  outroControle.dispatchEvent(new Event('change'));
+  desmontar();
+  let liberado = false;
+  resolver({async release() { liberado = true; }});
+  await Promise.resolve();
+  assert.equal(liberado,true);
+  assert.equal(status.textContent,'');
+});
+
+test('backup preserva fichas, fotos, versões e ordem e rejeita arquivos inválidos sem perda', () => {
+  const origem = abrirBanco(':memory:');
+  const destino = abrirBanco(':memory:');
+  try {
+    const imagem = 'data:image/jpeg;base64,' + readFileSync(new URL('./public/fotos/chocolate.jpg',import.meta.url)).toString('base64');
+    const ficha = origem.salvar({...brownie,capa:imagem,final:imagem,etapas:[{...brownie.etapas[0],foto:imagem}]});
+    origem.salvar({...ficha,ingredientes:[...ficha.ingredientes].reverse()},ficha);
+    origem.arquivar(ficha.id,true);
+    const backup = JSON.parse(JSON.stringify(origem.exportarBackup()));
+    const antes = destino.exportarBackup().fichas;
+    const previa = destino.preverBackup(backup);
+    assert.deepEqual(previa,{total:3,arquivadas:1,fotos:8,atuais:2});
+    assert.deepEqual(destino.exportarBackup().fichas,antes);
+    const invalido = structuredClone(backup);
+    invalido.fichas[2].etapas[0].foto = 'foto-corrompida';
+    assert.throws(() => destino.restaurarBackup(invalido), /Ficha 3 do backup/);
+    assert.throws(() => destino.restaurarBackup({...backup,versao:2}), /backup compatível/);
+    assert.throws(() => destino.restaurarBackup({...backup,fichas:[...backup.fichas,backup.fichas[0]]}), /repetido/);
+    assert.deepEqual(destino.exportarBackup().fichas,antes);
+    assert.deepEqual(destino.restaurarBackup(backup),{total:3});
+    assert.deepEqual(destino.exportarBackup().fichas,backup.fichas);
+    destino.restaurarBackup({...backup,fichas:[]});
+    assert.deepEqual(destino.listar(),[]);
+  } finally {
+    origem.fechar();
+    destino.fechar();
+  }
+});
 
 test('exclui fichas com ingredientes e etapas e mantém o catálogo vazio após reabrir', () => {
   const pasta = mkdtempSync(join(tmpdir(),'fichas-exclusao-'));

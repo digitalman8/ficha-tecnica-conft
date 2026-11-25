@@ -14,16 +14,18 @@ const banco = abrirBanco(join(dados, 'fichas.sqlite'));
 const mime = {html:'text/html; charset=utf-8', css:'text/css; charset=utf-8', js:'text/javascript; charset=utf-8', jpg:'image/jpeg', png:'image/png'};
 const slug = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const json = (res, status, dados) => res.writeHead(status, {'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(dados));
-async function corpo(req) {
+const limiteBackup = 256 * 1024 * 1024;
+const erroTamanhoBackup = 'O backup ultrapassa o limite de 256 MB.';
+async function corpo(req, limite = 32000000, erroTamanho = 'As fotos ultrapassam o tamanho máximo total.') {
   if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] ?? '')) throw new Error('Formato da solicitação inválido.');
   const partes = [];
   let total = 0;
   for await (const parte of req) {
     total += parte.length;
-    if (total > 32000000) throw new Error('As fotos ultrapassam o tamanho máximo total.');
+    if (total > limite) throw new Error(erroTamanho);
     partes.push(parte);
   }
-  const valor = JSON.parse(Buffer.concat(partes).toString());
+  const valor = JSON.parse(Buffer.concat(partes, total).toString());
   if (!valor || typeof valor !== 'object' || Array.isArray(valor)) throw new Error('Dados inválidos.');
   return valor;
 }
@@ -36,6 +38,33 @@ const servidor = createServer(async (req, res) => {
     if (pathname.startsWith('/api/')) {
       res.setHeader('Cache-Control','no-store');
       if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return json(res,403,{erro:'Origem não autorizada.'});
+      if (pathname === '/api/backup' && metodo === 'GET') {
+        const backup = banco.exportarBackup();
+        const fotos = new Map();
+        async function incluirFoto(item, chave) {
+          const caminho = item[chave];
+          if (!caminho.startsWith('/fotos/')) return;
+          if (!fotos.has(caminho)) {
+            const bytes = await readFile(join(publicDir, caminho.slice(1)));
+            fotos.set(caminho, 'data:image/jpeg;base64,' + bytes.toString('base64'));
+          }
+          item[chave] = fotos.get(caminho);
+        }
+        for (const ficha of backup.fichas) {
+          await incluirFoto(ficha,'capa');
+          await incluirFoto(ficha,'final');
+          for (const etapa of ficha.etapas) await incluirFoto(etapa,'foto');
+        }
+        const conteudo = JSON.stringify(backup);
+        if (Buffer.byteLength(conteudo) > limiteBackup) return json(res,413,{erro:erroTamanhoBackup});
+        res.setHeader('Content-Disposition','attachment; filename="backup-fichas-tecnicas-' + backup.geradoEm.replaceAll(':','-') + '.json"');
+        return res.writeHead(200,{'Content-Type':'application/json; charset=utf-8'}).end(conteudo);
+      }
+      if (metodo === 'POST' && ['/api/backup/prever','/api/backup/restaurar'].includes(pathname)) {
+        const backup = await corpo(req, limiteBackup, erroTamanhoBackup);
+        const resultado = pathname.endsWith('/prever') ? banco.preverBackup(backup) : banco.restaurarBackup(backup);
+        return json(res,200,resultado);
+      }
       if (pathname === '/api/fichas') {
         if (metodo === 'GET') return json(res,200,banco.listar());
         if (metodo === 'POST') return json(res,201,banco.salvar(await corpo(req)));

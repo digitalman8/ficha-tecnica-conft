@@ -23,6 +23,14 @@ Abra [a aplicação](http://127.0.0.1:4173/). O banco é criado em `dados/fichas
 6. O menu **Mais ações** oferece duplicação e arquivamento. O filtro **Arquivadas** permite reabrir e restaurar uma ficha.
 7. Para apagar uma ficha ativa ou arquivada, escolha **Mais ações → Excluir ficha** e confirme a exclusão definitiva.
 
+Durante o preparo, marque os ingredientes que já separou. A lista é reiniciada ao abrir outra ficha ou mudar o rendimento. A opção **Manter a tela ligada**, junto às etapas, funciona enquanto a ficha estiver visível em um navegador compatível.
+
+## Backup pelo catálogo
+
+Abra **Backup das fichas → Baixar backup** para guardar um arquivo JSON com fichas ativas e arquivadas, ingredientes, etapas e fotos. O arquivo contém os dados das fichas e deve ser guardado em um local de sua confiança.
+
+Use **Restaurar backup** para selecionar o JSON e verificar a prévia. A restauração substitui todo o catálogo. A opção **Baixar backup atual**, na confirmação, permite guardar uma cópia antes de continuar. O limite de cada backup é de 256 MB. Arquivos SQLite continuam sendo cópias manuais e devem ser recuperados com o servidor desligado.
+
 ## Estrutura
 
 - `server.js` serve a interface e a API local de fichas e exportação.

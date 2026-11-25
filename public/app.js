@@ -1,5 +1,6 @@
 import { ajustar, formatar, rendimento, numero, valido } from './rendimento.js';
 import { esc, montarEditor } from './editor.js';
+import { montarTelaLigada } from './tela-ligada.js';
 
 const $ = seletor => document.querySelector(seletor);
 const raiz = $('#conteudo');
@@ -7,6 +8,8 @@ const app = $('#app');
 const busca = $('#busca'), categoria = $('#categoria'), estado = $('#estado');
 let catalogo = [], ficha = null, desejado, etapa = 0, selecao = 0, descartar, timer;
 let concluidas = new Set();
+const separados = new Set();
+let desmontarTelaLigada = () => {};
 const chaveBusca = valor => valor.normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('pt-BR');
 const unidadeCurta = unidade => ({unidades:'un.', 'porções':'porç.'})[unidade] ?? unidade;
 const img = (src, alt, classe = '') => src ? `<img class="${classe}" src="${esc(src)}" alt="${esc(alt)}">` : '';
@@ -24,7 +27,7 @@ function avisar(msg) {
 async function api(url, metodo = 'GET', dados) {
   let resposta;
   try {
-    resposta = await fetch(url,{method:metodo,...(dados ? {headers:{'Content-Type':'application/json'},body:JSON.stringify(dados)} : {})});
+    resposta = await fetch(url,{method:metodo,...(dados ? {headers:{'Content-Type':'application/json'},body:dados instanceof Blob ? dados : JSON.stringify(dados)} : {})});
   } catch {
     throw new Error('Não foi possível conectar ao aplicativo. Verifique se o servidor está em execução.');
   }
@@ -54,6 +57,7 @@ async function recarregar() {
   mostrarCatalogo();
 }
 function voltar() {
+  desmontarTelaLigada();
   selecao++;
   descartar = null;
   app.classList.remove('detalhe');
@@ -70,6 +74,7 @@ function abrirTela(focar = true) {
   }
 }
 async function abrir(id, inicial = false) {
+  desmontarTelaLigada();
   const pedido = ++selecao;
   if (!inicial) {
     abrirTela();
@@ -79,6 +84,7 @@ async function abrir(id, inicial = false) {
     const resultado = await (await api(rota(id))).json();
     if (pedido !== selecao) return;
     ficha = resultado;
+    separados.clear();
     desejado = ficha.base;
     etapa = 0;
     concluidas = new Set();
@@ -97,12 +103,14 @@ async function abrir(id, inicial = false) {
 }
 function editar(origem = null) {
   if (descartar && !descartar()) return;
+  desmontarTelaLigada();
   selecao++;
   abrirTela();
   descartar = montarEditor(raiz, origem, async dados => {
     const nova = await (await api(rota(origem?.id),origem ? 'PUT' : 'POST',dados)).json();
     descartar = null;
     ficha = nova;
+    separados.clear();
     desejado = nova.base;
     etapa = 0;
     concluidas = new Set();
@@ -115,6 +123,7 @@ function editar(origem = null) {
   }, voltar);
 }
 function visualizar() {
+  desmontarTelaLigada();
   const temFinais = camposFinais.some(([k]) => ficha[k]) || ficha.final;
   const opcoes = [1,2,3].map(x => Math.round(ficha.base * x * 10000) / 10000).filter(valido);
   raiz.innerHTML = `<div class="topo"><div class="migalhas">${botao('retorno','Minhas fichas','link')} <span aria-hidden="true">/</span> <strong>${esc(ficha.nome)}</strong></div>
@@ -133,13 +142,17 @@ function visualizar() {
       <p id="erro-rendimento" class="erro inline" role="alert" hidden></p>
       </div>
     </div>
-    ${ficha.etapas.length ? '<nav id="etapas" class="etapas" aria-label="Etapas do preparo"></nav>' : ''}
+    ${ficha.etapas.length ? `<nav id="etapas" class="etapas" aria-label="Etapas do preparo"></nav>
+      <div class="tela-ligada"><label for="tela-ligada"><input type="checkbox" id="tela-ligada" aria-describedby="status-tela-ligada"> Manter a tela ligada</label>
+      <span id="status-tela-ligada" role="status"></span></div>` : ''}
     <div class="producao"><section class="painel ingredientes" id="ingredientes" aria-labelledby="titulo-ingredientes"></section>
     <section class="painel passo" id="passo" aria-label="Modo de preparo"></section></div>
     ${temFinais ? `<section class="painel finais"><h2>Informações complementares</h2>
       ${camposFinais.filter(([k]) => ficha[k]).map(([k,l]) => `<div><h3>${l}</h3><p class="multilinha">${esc(ficha[k])}</p></div>`).join('')}
       ${img(ficha.final,'Padrão final de ' + ficha.nome,'foto-final')}</section>` : ''}`;
   $('#retorno').onclick = voltar;
+  const controleTela = $('#tela-ligada');
+  if (controleTela) desmontarTelaLigada = montarTelaLigada(controleTela,$('#status-tela-ligada'));
   $('#editar').onclick = () => editar(ficha);
   $('#pdf').onclick = exportar;
   $('#duplicar').onclick = () => operacao('duplicar');
@@ -154,19 +167,23 @@ function visualizar() {
     erro.hidden = ok;
     erro.textContent = ok ? '' : 'Informe um valor de 0,0001 a 1.000.000, com até quatro casas decimais.';
     personalizado.setAttribute('aria-invalid', String(!ok));
-    if (ok) { desejado = numero(personalizado.value); mostrarAjuste(); }
+    if (ok) definirRendimento(numero(personalizado.value));
   }
   personalizado.addEventListener('input', validarPersonalizado);
   raiz.querySelector('.opcoes').addEventListener('click', e => {
     if (!e.target.matches('.preset')) return;
-    desejado = Number(e.target.dataset.valor);
     personalizado.value = '';
     personalizado.removeAttribute('aria-invalid');
     $('#erro-rendimento').hidden = true;
-    mostrarAjuste();
+    definirRendimento(Number(e.target.dataset.valor));
   });
   mostrarAjuste();
   mostrarPasso();
+}
+function definirRendimento(valor) {
+  if (desejado !== valor) separados.clear();
+  desejado = valor;
+  mostrarAjuste();
 }
 function mostrarAjuste() {
   const {ingredientes,lotes} = ajustar(ficha,desejado);
@@ -178,8 +195,18 @@ function mostrarAjuste() {
   $('#ingredientes').innerHTML = `<h2 id="titulo-ingredientes">Ingredientes para<br>${rendimento(desejado,ficha.unidade)}</h2>
     ${info.length ? `<p class="subtitulo">${info.join(' · ')}</p>` : ''}
     ${ficha.peso || ficha.forma ? `<p class="detalhes-forma">${[ficha.peso,ficha.forma].filter(Boolean).map(esc).join(' · ')}</p>` : ''}
-    ${ingredientes.length ? `<ul class="ingredientes-lista">${ingredientes.map(item => `<li><span><span class="check" aria-hidden="true">✓</span>${esc(item.nome)}${item.fracao ? '<span class="sr"> (unidade fracionada)</span>' : ''}</span><strong>${formatar(item.ajustada)} ${item.unidade}${item.fracao ? ' *' : ''}</strong></li>`).join('')}</ul>` : '<p>Nenhum ingrediente cadastrado.</p>'}
+    ${ingredientes.length ? `<ul class="ingredientes-lista">${ingredientes.map(item => `<li><label>
+      <input type="checkbox" data-ingrediente="${esc(item.id)}" ${separados.has(item.id) ? 'checked' : ''}>
+      <span><span class="sr">Marcar como separado: </span>${esc(item.nome)}${item.fracao ? '<span class="sr"> (unidade fracionada)</span>' : ''}</span>
+      <strong>${formatar(item.ajustada)} ${item.unidade}${item.fracao ? ' *' : ''}</strong>
+    </label></li>`).join('')}</ul>` : '<p>Nenhum ingrediente cadastrado.</p>'}
     ${ingredientes.some(item => item.fracao) ? '<p class="aviso" role="status">* Ingredientes em unidades fracionadas. Confira as quantidades antes de preparar.</p>' : ''}`;
+  $('#ingredientes').onchange = ({target}) => {
+    const id = target.dataset.ingrediente;
+    if (!id) return;
+    if (target.checked) separados.add(id);
+    else separados.delete(id);
+  };
 }
 function mostrarPasso(foco) {
   const atual = ficha.etapas[etapa];
@@ -219,14 +246,7 @@ async function exportar() {
   btn.textContent = 'Gerando PDF…';
   try {
     const resposta = await api(rota(ficha.id) + '/pdf?rendimento=' + encodeURIComponent(desejado));
-    const url = URL.createObjectURL(await resposta.blob());
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = resposta.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || 'ficha-tecnica.pdf';
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url),30000);
+    await baixarArquivo(resposta,'ficha-tecnica.pdf');
     avisar('PDF gerado. O download foi iniciado.');
   } catch (erro) {
     avisar('Falha ao exportar PDF. ' + erro.message);
@@ -235,6 +255,102 @@ async function exportar() {
     btn.textContent = 'Exportar PDF';
   }
 }
+async function baixarArquivo(resposta, nomePadrao) {
+  const url = URL.createObjectURL(await resposta.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = resposta.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || nomePadrao;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url),30000);
+}
+
+const dialogoBackup = $('#dialogo-backup');
+const seletorBackup = $('#arquivo-backup');
+const escolherBackup = $('#escolher-backup');
+const confirmarBackup = $('#confirmar-backup');
+const cancelarBackup = $('#cancelar-backup');
+const salvarBackupAtual = $('#salvar-backup-atual');
+const erroBackup = $('#erro-backup');
+let backupSelecionado;
+
+async function baixarBackup(evento) {
+  const botao = evento.currentTarget;
+  const rotulo = botao.textContent;
+  botao.disabled = true;
+  botao.textContent = 'Gerando backup…';
+  erroBackup.hidden = true;
+  try {
+    await baixarArquivo(await api('/api/backup'),'backup-fichas-tecnicas.json');
+    if (dialogoBackup.open) botao.textContent = 'Download iniciado';
+    else avisar('Download do backup iniciado.');
+  } catch (erro) {
+    const mensagem = 'Não foi possível baixar o backup. ' + erro.message;
+    if (dialogoBackup.open) {
+      erroBackup.textContent = mensagem;
+      erroBackup.hidden = false;
+    } else avisar(mensagem);
+  } finally {
+    botao.disabled = false;
+    if (botao.textContent !== 'Download iniciado') botao.textContent = rotulo;
+  }
+}
+$('#baixar-backup').onclick = salvarBackupAtual.onclick = baixarBackup;
+escolherBackup.onclick = () => seletorBackup.click();
+seletorBackup.onchange = async () => {
+  const arquivo = seletorBackup.files[0];
+  seletorBackup.value = '';
+  if (!arquivo) return;
+  escolherBackup.disabled = true;
+  escolherBackup.textContent = 'Validando backup…';
+  try {
+    if (arquivo.size > 256 * 1024 * 1024) throw new Error('O backup ultrapassa o limite de 256 MB.');
+    const {total, arquivadas, fotos, atuais} = await (await api('/api/backup/prever','POST',arquivo)).json();
+    backupSelecionado = arquivo;
+    $('#resumo-backup').textContent = arquivo.name + ' · Fichas ativas: ' + (total - arquivadas) +
+      ' · Arquivadas: ' + arquivadas + ' · Fotos: ' + fotos + ' · Fichas no catálogo atual: ' + atuais + '.';
+    erroBackup.hidden = true;
+    salvarBackupAtual.textContent = 'Baixar backup atual';
+    dialogoBackup.showModal();
+  } catch (erro) {
+    avisar('Não foi possível abrir o backup. ' + erro.message);
+  } finally {
+    escolherBackup.disabled = false;
+    escolherBackup.textContent = 'Restaurar backup';
+  }
+};
+cancelarBackup.onclick = () => dialogoBackup.close();
+dialogoBackup.onclose = () => { backupSelecionado = null; escolherBackup.focus(); };
+dialogoBackup.oncancel = evento => { if (confirmarBackup.disabled) evento.preventDefault(); };
+confirmarBackup.onclick = async () => {
+  if (!backupSelecionado || (descartar && !descartar())) return;
+  confirmarBackup.disabled = cancelarBackup.disabled = salvarBackupAtual.disabled = true;
+  confirmarBackup.textContent = 'Restaurando…';
+  erroBackup.hidden = true;
+  try {
+    await api('/api/backup/restaurar','POST',backupSelecionado);
+    ficha = null;
+    catalogo = [];
+    busca.value = categoria.value = '';
+    estado.value = 'ativas';
+    voltar();
+    dialogoBackup.close();
+    await recarregar();
+    avisar('Backup restaurado.');
+  } catch (erro) {
+    const mensagem = (dialogoBackup.open ? 'Não foi possível restaurar o backup. ' :
+      'Backup restaurado. Não foi possível atualizar o catálogo. Recarregue a página. ') + erro.message;
+    if (dialogoBackup.open) {
+      erroBackup.textContent = mensagem;
+      erroBackup.hidden = false;
+    } else avisar(mensagem);
+  } finally {
+    confirmarBackup.disabled = cancelarBackup.disabled = salvarBackupAtual.disabled = false;
+    confirmarBackup.textContent = 'Confirmar restauração';
+  }
+};
+
 async function excluirFicha() {
   const alvo = ficha;
   if (!confirm('Excluir definitivamente a ficha “' + alvo.nome + '”? Esta ação não pode ser desfeita.')) return;

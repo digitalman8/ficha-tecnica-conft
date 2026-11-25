@@ -42,6 +42,38 @@ function validar(dados) {
   return { ...ficha, base: numero(dados.base), unidade: dados.unidade, lote: dados.lote ? numero(dados.lote) : null, capa: foto(dados.capa), final: foto(dados.final) };
 }
 
+function lerBackup(backup) {
+  if (backup?.formato !== 'fichas-tecnicas' || backup.versao !== 1 || !Array.isArray(backup.fichas)) {
+    throw new Error('Este arquivo não é um backup compatível de Fichas Técnicas.');
+  }
+  const ids = new Set();
+  function idValido(id) {
+    if (typeof id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id) || ids.has(id)) {
+      throw new Error('Identificador inválido ou repetido.');
+    }
+    ids.add(id);
+    return id;
+  }
+  const dataValida = valor => typeof valor === 'string' && Number.isFinite(Date.parse(valor));
+  return backup.fichas.map((ficha, i) => {
+    try {
+      const {ingredientes, etapas, ...dados} = validar(ficha);
+      const {versao, exemplo, arquivada, criada, atualizada} = ficha;
+      if (!Number.isSafeInteger(versao) || versao < 1 || typeof exemplo !== 'boolean' ||
+          typeof arquivada !== 'boolean' || !dataValida(criada) || !dataValida(atualizada)) {
+        throw new Error('Versão, status ou datas inválidas.');
+      }
+      return {
+        id:idValido(ficha.id), dados, versao, exemplo, arquivada, criada, atualizada,
+        ingredientes: ingredientes.map((item, ordem) => ({id:idValido(ficha.ingredientes[ordem].id), dados:item})),
+        etapas: etapas.map((item, ordem) => ({id:idValido(ficha.etapas[ordem].id), dados:item}))
+      };
+    } catch (erro) {
+      throw new Error('Ficha ' + (i + 1) + ' do backup: ' + erro.message);
+    }
+  });
+}
+
 export function abrirBanco(caminho) {
   const db = new DatabaseSync(caminho);
   db.exec(`
@@ -102,6 +134,36 @@ export function abrirBanco(caminho) {
   });
   return {
     get, salvar,
+    exportarBackup() {
+      return transacao(() => ({
+        formato:'fichas-tecnicas', versao:1, geradoEm:new Date().toISOString(),
+        fichas: db.prepare('SELECT id FROM fichas ORDER BY criada, rowid').all().map(({id}) => get(id))
+      }));
+    },
+    preverBackup(backup) {
+      const fichas = lerBackup(backup);
+      return {
+        total:fichas.length,
+        arquivadas:fichas.filter(ficha => ficha.arquivada).length,
+        fotos:fichas.reduce((n, {dados, etapas}) => n + [dados.capa, dados.final, ...etapas.map(etapa => etapa.dados.foto)].filter(Boolean).length, 0),
+        atuais:db.prepare('SELECT count(*) AS total FROM fichas').get().total
+      };
+    },
+    restaurarBackup(backup) {
+      const fichas = lerBackup(backup);
+      transacao(() => {
+        db.exec('DELETE FROM ingredientes; DELETE FROM etapas; DELETE FROM fichas;');
+        const inserirFicha = db.prepare('INSERT INTO fichas VALUES (?,?,?,?,?,?,?)');
+        const inserirIngrediente = db.prepare('INSERT INTO ingredientes VALUES (?,?,?,?)');
+        const inserirEtapa = db.prepare('INSERT INTO etapas VALUES (?,?,?,?)');
+        for (const ficha of fichas) {
+          inserirFicha.run(ficha.id, JSON.stringify(ficha.dados), ficha.versao, Number(ficha.exemplo), Number(ficha.arquivada), ficha.criada, ficha.atualizada);
+          ficha.ingredientes.forEach((item, ordem) => inserirIngrediente.run(item.id, ficha.id, ordem, JSON.stringify(item.dados)));
+          ficha.etapas.forEach((item, ordem) => inserirEtapa.run(item.id, ficha.id, ordem, JSON.stringify(item.dados)));
+        }
+      });
+      return {total:fichas.length};
+    },
     listar: () => db.prepare('SELECT * FROM fichas ORDER BY criada, rowid').all().map(row => {
       const {id,nome,categoria,base,unidade,capa,exemplo,arquivada} = hidratar(row);
       return {id,nome,categoria,base,unidade,capa,exemplo,arquivada};
