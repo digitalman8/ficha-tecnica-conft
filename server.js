@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -8,9 +9,6 @@ import { gerarPdf } from './pdf.js';
 import { numero, valido } from './public/rendimento.js';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
-const dados = process.env.FICHAS_DADOS ? resolve(process.env.FICHAS_DADOS) : fileURLToPath(new URL('./dados/', import.meta.url));
-mkdirSync(dados, {recursive:true});
-const banco = abrirBanco(join(dados, 'fichas.sqlite'));
 const mime = {html:'text/html; charset=utf-8', css:'text/css; charset=utf-8', js:'text/javascript; charset=utf-8', jpg:'image/jpeg', png:'image/png'};
 const slug = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const json = (res, status, dados) => res.writeHead(status, {'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(dados));
@@ -29,10 +27,14 @@ async function corpo(req, limite = 32000000, erroTamanho = 'As fotos ultrapassam
   if (!valor || typeof valor !== 'object' || Array.isArray(valor)) throw new Error('Dados inválidos.');
   return valor;
 }
-const servidor = createServer(async (req, res) => {
+async function responder(banco, req, res) {
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'none'");
   try {
+    const porta = req.socket.localPort;
+    if (![ '127.0.0.1:' + porta, 'localhost:' + porta ].includes(req.headers.host)) {
+      return json(res,403,{erro:'Endereço local inválido.'});
+    }
     const {pathname, searchParams} = new URL(req.url, 'http://localhost');
     const metodo = req.method;
     if (pathname.startsWith('/api/')) {
@@ -110,5 +112,35 @@ const servidor = createServer(async (req, res) => {
     }
     return json(res,400,{erro:erro instanceof SyntaxError ? 'Dados inválidos.' : erro.message});
   }
-});
-servidor.listen(Number(process.env.PORT || 4173), '127.0.0.1', () => console.log('Fichas técnicas em http://127.0.0.1:' + servidor.address().port));
+}
+
+export async function iniciarServidor({dados, porta}) {
+  mkdirSync(dados, {recursive:true});
+  const banco = abrirBanco(join(dados, 'fichas.sqlite'));
+  const servidor = createServer((req, res) => responder(banco, req, res));
+  try {
+    const pronto = once(servidor, 'listening');
+    servidor.listen(porta, '127.0.0.1');
+    await pronto;
+  } catch (erro) {
+    banco.fechar();
+    throw erro;
+  }
+  servidor.once('close', () => banco.fechar());
+  return {
+    url:'http://127.0.0.1:' + servidor.address().port,
+    fechar:() => new Promise(resolve => servidor.close(resolve))
+  };
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const dados = process.env.FICHAS_DADOS ? resolve(process.env.FICHAS_DADOS) : fileURLToPath(new URL('./dados/', import.meta.url));
+  const porta = Number(process.env.PORT || 4173);
+  try {
+    const {url} = await iniciarServidor({dados, porta});
+    console.log('Fichas técnicas em ' + url);
+  } catch (erro) {
+    console.error(erro.code === 'EADDRINUSE' ? 'A porta ' + porta + ' já está em uso. Defina outra porta em PORT.' : erro.message);
+    process.exitCode = 1;
+  }
+}

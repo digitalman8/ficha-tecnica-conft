@@ -4,6 +4,14 @@ Aplicativo local para cadastrar fichas, consultar receitas em produção e baixa
 
 ## Executar
 
+### Instalação no Windows
+
+Execute `Fichas-Tecnicas-Setup-1.0.0.exe` no Windows x64. Depois, abra **Fichas Técnicas** pelo atalho da área de trabalho ou do menu Iniciar. O instalador já inclui o necessário para rodar o programa offline.
+
+O banco com fichas e fotos fica na pasta de dados do usuário do Windows, normalmente `%APPDATA%\Fichas Técnicas\dados\fichas.sqlite`. As atualizações são instaladas por cima usando o novo instalador. Para trazer as fichas da versão web, baixe um backup JSON naquela versão e restaure pelo catálogo no aplicativo instalado.
+
+### Desenvolvimento
+
 Requer Node.js 24 ou posterior. O aplicativo usa apenas módulos incluídos no Node.js e APIs do navegador.
 
 ```sh
@@ -12,6 +20,8 @@ npm start
 ```
 
 Abra [a aplicação](http://127.0.0.1:4173/). O banco é criado em `dados/fichas.sqlite` na primeira execução. Para fazer backup, encerre o servidor e copie esse arquivo. `FICHAS_DADOS` permite escolher outro diretório e `PORT` altera a porta local.
+
+Para gerar o instalador no Windows x64, execute `npm ci` e `npm run empacotar:windows`. O build empacota o Electron com electron-builder e compila o instalador com o compilador do .NET Framework do Windows. O instalador sai em `dist/` e é gerado sem assinatura digital. Feche o aplicativo antes de instalar uma atualização.
 
 ## Cadastrar e exportar
 

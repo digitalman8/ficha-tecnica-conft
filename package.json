@@ -2,12 +2,36 @@
   "name": "fichas-tecnicas",
   "version": "1.0.0",
   "private": true,
+  "description": "Fichas técnicas de confeitaria com armazenamento local",
   "type": "module",
+  "main": "desktop.js",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "desktop": "electron .",
+    "empacotar:windows": "powershell.exe -NoProfile -File empacotar-windows.ps1"
+  },
+  "devDependencies": {
+    "electron": "45.5.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "br.com.fichastecnicas.confeitaria",
+    "productName": "Fichas Técnicas",
+    "files": [
+      "desktop.js",
+      "server.js",
+      "banco.js",
+      "pdf.js",
+      "exemplos.js",
+      "app.ico",
+      "public/**/*"
+    ],
+    "win": {
+      "icon": "app.ico"
+    }
   }
 }
