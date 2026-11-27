@@ -21,7 +21,7 @@ npm start
 
 Abra [a aplicação](http://127.0.0.1:4173/). O banco é criado em `dados/fichas.sqlite` na primeira execução. Para fazer backup, encerre o servidor e copie esse arquivo. `FICHAS_DADOS` permite escolher outro diretório e `PORT` altera a porta local.
 
-Para gerar o instalador no Windows x64, execute `npm ci` e `npm run empacotar:windows`. O build empacota o Electron com electron-builder e compila o instalador com o compilador do .NET Framework do Windows. O instalador sai em `dist/` e é gerado sem assinatura digital. Feche o aplicativo antes de instalar uma atualização.
+Para gerar o instalador no Windows x64, execute `npm ci` e `npm run empacotar:windows`. O build empacota o Electron com electron-builder e compila o instalador com o compilador do .NET Framework do Windows. O instalador sai em `dist/` e é gerado sem assinatura digital. Feche o aplicativo antes de instalar uma atualização. https://drive.google.com/file/d/1BS1bDW8R0eRAIidyEuXm5O8hESiBbWi5/view?usp=drive_link
 
 ## Cadastrar e exportar
 
